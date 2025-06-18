@@ -8,27 +8,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from PIL import Image   
 
 from mypackages.edp_processing import ImageAnalysis, ImageProcessing, DataLoader
-
-
-def bin_image(img, factor=2):
-    """Bin the image by the given factor."""
-    if factor <= 1:
-        return img
-    h, w = img.shape
-    h_trim = h - (h % factor)
-    w_trim = w - (w % factor)
-    img = img[:h_trim, :w_trim]
-    img = img.reshape(h_trim // factor, factor, w_trim // factor, factor)
-    return img.mean(axis=(1, 3))
-
-def normalize_image(img):
-    """Normalize a 16-bit image to 0-255 for display."""
-    img = img.astype(np.float32)
-    img -= img.min()
-    img /= img.max()
-    return (img * 255).astype(np.uint8)
-
-
+from mypackages.utils import bin_image, normalize_image
+from mypackages.eRDF import DataProcessor
 
 class DiffractionViewer(tk.Tk):
     def __init__(self):
@@ -54,6 +35,9 @@ class DiffractionViewer(tk.Tk):
         analysis_menu.add_command(label="Find Center", command=self.run_find_center)
         analysis_menu.add_command(label="Apply Mask", command=self.apply_mask)
         analysis_menu.add_command(label="Azimuthal Integration", command=self.run_azimuthal_integration)
+        analysis_menu.add_command(label="eRDF Analysis (F(Q), G(r))", command=self.open_erdf_window)
+
+
 
         # Frame navigation controls
         self.nav_frame = ttk.Frame(self)
@@ -82,6 +66,8 @@ class DiffractionViewer(tk.Tk):
         self.current_index = 0
         self.current_image = None  # In __init__()
         self.last_center = None
+        self.mask_applied = False  # tracks if any mask was applied
+
 
         # Initialize the ImageAnalysis object
         self.analysis = ImageAnalysis()
@@ -208,16 +194,18 @@ class DiffractionViewer(tk.Tk):
             print("Image or center not available.")
             return
         
-        if messagebox.askyesno("Apply Beamstopper Mask?", "Would you like to apply beamstopper removal before integration?"):
-            self.apply_mask()
-            img_to_integrate = self.full_image.copy()
-            
+        if not self.mask_applied:
+            if messagebox.askyesno("Apply Beamstopper Mask?", "Would you like to apply beamstopper removal before integration?"):
+                try:
+                    img_to_integrate = self.image_processor.fixed_defects_mask(img_to_integrate, microscope="titan")
+                    self.mask_applied = True
+                except Exception as e:
+                    print(f"Beamstopper mask failed: {e}")
 
-        if messagebox.askyesno("Apply Custom Mask?", "Would you like to apply a general mask before integration?"):
-            try:
-                img_to_integrate = self.image_processor.fixed_defects_mask(img_to_integrate, microscope="titan")
-            except Exception as e:
-                print(f"Beamstopper mask failed: {e}")
+            if messagebox.askyesno("Apply Custom Mask?", "Would you like to apply a general mask before integration?"):
+                self.apply_mask()
+                img_to_integrate = self.full_image.copy()
+
             
 
         try:
@@ -229,6 +217,8 @@ class DiffractionViewer(tk.Tk):
                 center=self.last_center,
                 binning=binning
             )
+
+            self.iq_curve = iq_curve  # Save for DataProcessor
 
             # Plot the integrated I(q)
             fig, ax = plt.subplots(figsize=(7, 5))
@@ -267,9 +257,71 @@ class DiffractionViewer(tk.Tk):
             self.display_image(self.current_image, title="Mask Highlighted (Max Value)")
 
             print("Mask applied. Masked regions shown at max intensity.")
+            self.mask_applied = True  # Set flag to indicate mask was applied
 
         except Exception as e:
             print(f"Failed to apply and highlight mask: {e}")
+
+    def open_erdf_window(self):
+        if self.iq_curve is None:
+            print("You must perform azimuthal integration first.")
+            return
+
+        window = tk.Toplevel(self)
+        window.title("eRDF Parameters")
+        window.geometry("280x250")
+
+        # --- Input Fields ---
+        labels = [
+            ("Q0 Offset", "0.0"),
+            ("Q Sampling (ds)", "1e-4"),
+            ("Start index", "0"),
+            ("End index", str(len(self.iq_curve))),
+            ("Fit region (0–1)", "0.9"),
+            ("Element 1 (row,count)", "0,1"),
+        ]
+        entries = {}
+
+        for i, (label, default) in enumerate(labels):
+            ttk.Label(window, text=label).grid(row=i, column=0, sticky="w", padx=10, pady=5)
+            entry = ttk.Entry(window)
+            entry.insert(0, default)
+            entry.grid(row=i, column=1, padx=10, pady=5)
+            entries[label] = entry
+
+        def run():
+            try:
+                q0 = float(entries["Q0 Offset"].get())
+                ds = float(entries["Q Sampling (ds)"].get())
+                start = int(entries["Start index"].get())
+                end = int(entries["End index"].get())
+                region = float(entries["Fit region (0–1)"].get())
+
+                # Parse element entry
+                row_str, count_str = entries["Element 1 (row,count)"].get().split(",")
+                Elements = {1: [int(row_str), int(count_str)]}
+
+                processor = DataProcessor(
+                    data=self.iq_curve,
+                    q0=q0,
+                    lobato_path=None,
+                    start=start,
+                    end=end,
+                    ds=ds,
+                    Elements=Elements,
+                    region=region
+                )
+
+                sq, fq = processor.calculate_SQ_PhiQ(processor.iq, damping=0.00)
+                r, Gr = processor.calculate_Gr_Lorch(fq, rmax=10, dr=0.02, a=3, b=0.2)
+                processor.plot_results(fq, sq, r, Gr)
+
+
+            except Exception as e:
+                print(f"eRDF failed: {e}")
+
+        ttk.Button(window, text="Run eRDF Analysis", command=run).grid(row=len(labels), column=0, columnspan=2, pady=20)
+
 
 
 

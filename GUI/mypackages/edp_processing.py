@@ -2,13 +2,9 @@ import os
 import numpy as np
 from PIL import Image
 import cv2
-
-import hyperspy.api as hs
-#from pystackreg import StackReg
 import pandas as pd
 import math
 import matplotlib.pyplot as plt
-#import pyFAI
 import numpy.ma as ma
 from scipy.signal import find_peaks
 from scipy.interpolate import interp1d
@@ -21,6 +17,7 @@ class DataLoader:
         pass
 
     def load_ser(self, file_path):
+        import hyperspy.api as hs
         """Loads a .ser diffraction series using HyperSpy."""
         data = hs.load(file_path, signal_type='diffraction', lazy=True)
         num_frames = data.data.shape[0]

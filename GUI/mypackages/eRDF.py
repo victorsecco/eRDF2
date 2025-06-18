@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import math
 import matplotlib.pyplot as plt
-import os
 from scipy.signal import butter, filtfilt
 from scipy.optimize import minimize
 
@@ -14,7 +13,7 @@ class DataProcessor:
         self.start = start
         self.end = end
         self.ds = ds
-        self.lobato = "src\packages\Lobato_2014.txt" if lobato_path is None else lobato_path
+        self.lobato = r"C:\Users\seccolev\eRDF2\GUI\mypackages\Lobato_2014.txt" if lobato_path is None else lobato_path
         self.region = region
         self.q0 = q0
 
@@ -209,42 +208,38 @@ class DataProcessor:
         iq = iq + self.autofit
         return iq
 
-    def plot_results(self, fq, fq2, Gr0, r, Gr1, rw):
+    def plot_results(self, fq, fq2, r, Gr0):
+        plt.ion()  # interactive mode ON
+        plt.close('all')  # close any previous figures
+
         f, ax = plt.subplots(1, 3, figsize=(14, 5))
 
-        # Plotting I(Q) and Fit
-        line1, = ax[0].plot(self.q, self.autofit)
-        line2, = ax[0].plot(self.q, self.iq)
-        ax[0].legend([line1, line2], ["Fit", "I(Q)"])
-        #ax[0].text(5, 600000, 'N: ' f'{int(self.N)}')
+        # I(Q) vs Fit
+        ax[0].plot(self.q, self.autofit, label="Fit")
+        ax[0].plot(self.q, self.iq, label="I(Q)")
         ax[0].set_xlabel("Q ($\AA^{-1}$)")
         ax[0].set_ylabel("Intensity")
-        ax[0].title.set_text('Fitting I(Q)')
+        ax[0].legend()
+        ax[0].set_title("Fitting I(Q)")
 
-        # Plotting S(Q)
-        line3, = ax[1].plot(self.q, fq, label = "$\phi(Q)$" )
-        #line4, = ax[1].plot(self.q, fq2, label = "S(Q) filtered")
+        # F(Q)
+        ax[1].plot(self.q, fq, label="$\phi(Q)$")
         ax[1].set_xlabel("Q ($\AA^{-1}$)")
         ax[1].set_ylabel("$\phi(Q)$")
-        #ax[1].set_xlim(11.5,13.5)
-        #ax[1].set_ylim(0.4,0.6)
+        ax[1].set_title("Calculating $\phi(Q)$")
         ax[1].legend()
-        ax[1].title.set_text('Calculating $\phi(Q)$')
 
-        # Plotting G(r)
-        line5, = ax[2].plot(r, Gr0, label = "G(r)")
-        line6, = ax[2].plot(r, Gr1, label = "G(r) Lorch")
-        #ax[2].text(5, 0.8*Gr0.max(), 'Rw = 'f'{rw:.2f}')
+        # G(r)
+        ax[2].plot(r, Gr0, label="G(r)")
+        ax[2].set_xlim([0, 30])
         ax[2].set_xlabel("r ($\AA$)")
         ax[2].set_ylabel("G(r)")
-        ax[2].set_xlim([0, 10])
-        ax[2].title.set_text('Calculating G(r)')
+        ax[2].set_title("Calculating G(r)")
         ax[2].legend()
-        plt.subplots_adjust(hspace=1)
+
         f.tight_layout()
-
-
-        plt.show()
+        plt.draw()
+        plt.pause(0.001) 
 
 
     def save_to_csv(self, data, file_path, separator, x_name, y_name, out='pdfgui'):
