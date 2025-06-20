@@ -312,8 +312,8 @@ class DiffractionViewer(tk.Tk):
                     region=region
                 )
 
-                sq, fq = processor.calculate_SQ_PhiQ(processor.iq, damping=0.00)
-                r, Gr = processor.calculate_Gr_Lorch(fq, rmax=10, dr=0.02, a=3, b=0.2)
+                sq, fq = processor.SQ_PhiQ(processor.iq, damping=0.00)
+                r, Gr = processor.Gr(fq, rmax=30, dr=0.02)
                 processor.plot_results(fq, sq, r, Gr)
 
 

@@ -1,10 +1,12 @@
 #@title 1.1. Classes e funções
 import numpy as np
+import os
 import pandas as pd
 import math
 import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 from scipy.optimize import minimize
+from pathlib import Path
 
 class DataProcessor:
     def __init__(self, data, q0, lobato_path, start, end, ds, Elements, region):
@@ -13,7 +15,11 @@ class DataProcessor:
         self.start = start
         self.end = end
         self.ds = ds
-        self.lobato = r"C:\Users\seccolev\eRDF2\GUI\mypackages\Lobato_2014.txt" if lobato_path is None else lobato_path
+        from pathlib import Path
+
+        default_lobato_path = Path(__file__).parent / "data" / "Lobato_2014.txt"
+        self.lobato = Path(lobato_path) if lobato_path else default_lobato_path
+
         self.region = region
         self.q0 = q0
 
@@ -30,9 +36,9 @@ class DataProcessor:
 
         # Load and process data in the constructor
         self.x, self.iq, self.q, self.s, self.s2 = self.load_and_process_data(data, q0)
-        self.lobato_factors = self.calculate_Lobato_Factors()
-        self.fq_sq, self.gq, self.fqfit, self.iqfit = self.calculate_fq_gq()
-        self.N, self.C, self.autofit = self.calculate_N_and_parameters(region=self.region)
+        self.lobato_factors = self.Lobato_Factors()
+        self.fq_sq, self.gq, self.fqfit, self.iqfit = self.fq_gq()
+        self.N, self.C, self.autofit = self.N_and_parameters(region=self.region)
 
     def load_and_process_data(self, data_column, q0):
         # Modify this method to process a single column of data
@@ -45,7 +51,7 @@ class DataProcessor:
         s2 = s ** 2
         return x, iq, q, s, s2
 
-    def calculate_Lobato_Factors(self):
+    def Lobato_Factors(self):
         FACTORS = []
         Lobato_Factors = np.empty(shape=(0))
         df = pd.read_csv(self.lobato, header=None)
@@ -65,25 +71,35 @@ class DataProcessor:
 
         return Lobato_Factors
 
-    def calculate_fq_gq(self):
-        fq = np.empty(shape=(0))
-        gq = np.empty(shape=(0))
+    def fq_gq(self) -> tuple[np.ndarray, np.ndarray, float, float]:
+        """
+        Calculate F(Q) and G(Q) arrays, including fitting parameters.
 
+        Returns:
+            tuple: fq squared, gq, fqfit, iqfit values.
+        """
+        fq_list = []
+        gq_list = []
 
-        for i in range(0, len(self.lobato_factors)):
-            if self.Elements[i + 1]:
-                fq = np.append(fq, self.lobato_factors[i] * self.Elements[i + 1][2])
-                gq = np.append(gq, (self.lobato_factors[i] ** 2) * self.Elements[i + 1][2])
+        for i in range(len(self.lobato_factors)):
+            if self.Elements.get(i + 1):
+                weight = self.Elements[i + 1][2]
+                fq_list.append(self.lobato_factors[i] * weight)
+                gq_list.append((self.lobato_factors[i] ** 2) * weight)
 
-        fq_sq = np.sum(fq.reshape(len(self.Elements), len(self.x)), axis=0)
-        fq_sq = fq_sq ** 2
-        gq = np.sum(gq.reshape(len(self.Elements), len(self.x)), axis=0)
-        fqfit = gq[self.end - (self.start+1)]
-        iqfit = self.iq[self.end - (self.start+1)]
+        fq_array = np.array(fq_list)
+        gq_array = np.array(gq_list)
+
+        fq_sq = np.sum(fq_array, axis=0) ** 2
+        gq = np.sum(gq_array, axis=0)
+
+        fqfit = gq[self.end - (self.start + 1)]
+        iqfit = self.iq[self.end - (self.start + 1)]
 
         return fq_sq, gq, fqfit, iqfit
 
-    def calculate_N_and_parameters(self, region=0):
+
+    def N_and_parameters(self, region=0):
         interval = int(region*len(self.x))
         wi = np.ones_like(self.x[interval:])
 
@@ -103,14 +119,26 @@ class DataProcessor:
 
         return N, C, autofit
 
-    def calculate_SQ_PhiQ(self, iq, damping):
+    def SQ_PhiQ(self, iq, damping):
         sq = (((iq - self.autofit)) / (self.N * self.fq_sq)) + 1
         fq = (((iq - self.autofit) * self.s) / (self.N * self.fq_sq)) * np.exp(-self.s2 * damping)
 
         return sq, fq
+    
+    def Gr(self, fq, rmax, dr):
+        Gr = []
+        r = np.arange(0, rmax, dr)
 
+        for i, r_step in enumerate(r):
+            integrand = 8 * math.pi * fq * np.sin(self.q * r_step)
+            Gr.append(np.trapz(integrand, self.q/(2* np.pi)))
+        # Convert lists to numpy arrays for consistency
+        r = np.array(r, dtype=np.float64)
+        Gr = np.array(Gr, dtype=np.float64)
 
-    def calculate_Gr_Lorch(self, fq, rmax, dr, a, b):
+        return r, Gr/(2 * np.pi)
+
+    def Gr_Lorch(self, fq, rmax, dr, a, b):
         Gr = np.zeros_like(self.q)
         #r = np.linspace(dr, rmax, self.end-self.start)
         r = np.arange(dr, dr*(self.end-self.start)+dr, dr)
@@ -122,7 +150,7 @@ class DataProcessor:
 
         return r, Gr
 
-    def calculate_Gr_Lorch_arctan(self, fq, rmax, dr, a, b, c):
+    def Gr_Lorch_arctan(self, fq, rmax, dr, a, b, c):
         Gr = np.zeros_like(self.q)
         r = np.linspace(dr, rmax, self.end-self.start)
         for i, r_step in enumerate(r):
@@ -192,7 +220,7 @@ class DataProcessor:
         #else:
         return fq_inverse
 
-    def calculate_IQ(self, fq, damping):
+    def IQ(self, fq, damping):
         """
         Reverse calculation of the total scattering intensity based on the calculated fq
         
@@ -263,7 +291,7 @@ class DataProcessor:
         else:
             data.to_csv(f'{file_path}.csv', sep=separator, index=False, header=False)
 
-def calculate_Gr(q, fq, rmax, dr):
+def Gr(q, fq, rmax, dr):
         Gr = []
         r = np.arange(0, rmax, dr)
 
@@ -331,7 +359,7 @@ def read_discus_fit_file(path):
     
     return df.astype(float)
 
-def calculate_rw(obs, calc, scaling = 1):
+def rw(obs, calc, scaling = 1):
     #Calculate residuals metric from experimental and calculated data
     obs = obs * scaling
     return math.sqrt(sum((obs-calc)**2)/sum(obs**2))
@@ -342,7 +370,7 @@ def remove_empty_strings(lst):
 # The wrapper function for minimize
 def optimize_constant(grob, calc, initial_guess=1):
     # Objective function to minimize, takes only constant as argument
-    objective = lambda constant: calculate_rw(grob, calc, constant)
+    objective = lambda constant: rw(grob, calc, constant)
     # Run the optimization
     result = minimize(objective, initial_guess)
     return result.x  # This returns the optimized constant
