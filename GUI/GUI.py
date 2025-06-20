@@ -38,7 +38,6 @@ class DiffractionViewer(tk.Tk):
         analysis_menu.add_command(label="eRDF Analysis (F(Q), G(r))", command=self.open_erdf_window)
 
 
-
         # Frame navigation controls
         self.nav_frame = ttk.Frame(self)
         self.prev_button = ttk.Button(self.nav_frame, text="<< Previous", command=self.prev_frame)
@@ -205,8 +204,6 @@ class DiffractionViewer(tk.Tk):
             if messagebox.askyesno("Apply Custom Mask?", "Would you like to apply a general mask before integration?"):
                 self.apply_mask()
                 img_to_integrate = self.full_image.copy()
-
-            
 
         try:
             # You can adapt binning to image size or keep a fixed value

@@ -12,9 +12,11 @@ def bin_image(img, factor=2):
     img = img.reshape(h_trim // factor, factor, w_trim // factor, factor)
     return img.mean(axis=(1, 3))
 
-def normalize_image(img):
-    """Normalize a 16-bit image to 0-255 for display."""
+def normalize_image(img, clip_percent=1):
+    """Stretch contrast by clipping low/high extremes (percentile-based)."""
     img = img.astype(np.float32)
+    low, high = np.percentile(img, [clip_percent, 100 - clip_percent])
+    img = np.clip(img, low, high)
     img -= img.min()
-    img /= img.max()
+    img /= (img.max() + 1e-9)
     return (img * 255).astype(np.uint8)
